@@ -26,6 +26,7 @@ public class KdTree {
     private Node root;
     private int count;
     private Point2D nearestP;
+    private Double distance;
 
     // construct an empty set of points
     public         KdTree(){
@@ -136,92 +137,87 @@ public class KdTree {
     public Iterable<Point2D> range(RectHV rect){
         if(rect == null) throw new IllegalArgumentException();
         Queue<Point2D> queue = new Queue<Point2D>();
-        range(rect, root, queue);
+        RectHV range = new RectHV(0, 0, 1, 1);
+        range(rect, root, queue, range);
         return queue;
     }
 
-    private void range(RectHV rect, Node x, Queue<Point2D> queue){
-        if(x != null) {
-            if (rect.contains(x.point)) {//search both subtrees
-                queue.enqueue(x.point);
-                range(rect, x.left, queue);
-                range(rect, x.right, queue);
-            } else {
-                if (x.vertical) {
-                    if(rect.xmax() > x.point.x() && rect.xmin() < x.point.x()){
-                        range(rect, x.left, queue);
-                        range(rect, x.right, queue);
-                    }else if (rect.xmax() < x.point.x()) range(rect, x.left, queue);
-                    else if (rect.xmin() >= x.point.x() || rect.xmax() == x.point.x()) range(rect, x.right, queue);
-                } else {
-                    if(rect.ymax() > x.point.y() && rect.ymin() < x.point.y()){
-                        range(rect, x.left, queue);
-                        range(rect, x.right, queue);
-                    }
-                    else if (rect.ymax() < x.point.y()) range(rect, x.left, queue);
-                    else if (rect.ymin() >= x.point.y() || rect.ymax() == x.point.y()) range(rect, x.right, queue);
-                }
-            }
+    private void range(RectHV rect, Node x, Queue<Point2D> queue, RectHV range){
+        if(x == null) return;
+        //when x is a leaf node
+        if(x.left == null && x.right == null && rect.contains(x.point)){
+            queue.enqueue(x.point);
+            return;
         }
+        if(rect.contains(x.point)) queue.enqueue(x.point);
+        if(x.vertical){
+            RectHV left = new RectHV(range.xmin(), range.ymin(), x.point.x(), range.ymax());
+            RectHV right = new RectHV(x.point.x(), range.ymin(), range.xmax(), range.ymax());
+            if(rect.intersects(left) && rect.intersects(right)){
+                range(rect, x.left, queue, left);
+                range(rect, x.right, queue, right);
+            }else if(rect.intersects(left)){
+                range(rect, x.left, queue, left);
+            }else if(rect.intersects(right)){
+                range(rect, x.right, queue, right);
+            }else return;
+
+        }else{
+            RectHV down = new RectHV(range.xmin(), range.ymin(), range.xmax(), x.point.y());
+            RectHV up = new RectHV(range.xmin(), x.point.y(), range.xmax(), range.ymax());
+            if(rect.intersects(down) && rect.intersects(up)){
+                range(rect, x.left, queue, down);
+                range(rect, x.right, queue, up);
+            }else if(rect.intersects(down)){
+                range(rect, x.left, queue, down);
+            }else if(rect.intersects(up)){
+                range(rect, x.right, queue, up);
+            }else return;
+        }
+
+
+
     }
+
+
 
     // a nearest neighbor in the set to point p; null if the set is empty
     public           Point2D nearest(Point2D p){
         if(p == null) throw new IllegalArgumentException();
         nearestP = null;
+        distance = Double.POSITIVE_INFINITY;
         RectHV rect = new RectHV(0, 0, 1, 1);
-        nearest(p, root, Double.POSITIVE_INFINITY, rect);
+        nearest(p, root, rect);
         return nearestP;
     }
 
-    private Double nearest(Point2D p, Node x, Double distance, RectHV rect){
-        if(x != null) {
-            if (p.distanceSquaredTo(x.point) < distance) {
-                nearestP = x.point;
-                distance = p.distanceSquaredTo(x.point);
-            }
-
-
-            if(x.vertical){
-                RectHV right = new RectHV(x.point.x(), rect.ymin(), rect.xmax(), rect.ymax());
-                RectHV left = new RectHV(rect.xmin(), rect.ymin(), x.point.x(), rect.ymax());
-                if(p.x() < x.point.x()){
-                    //right subtree bounding box
-                    Double rightMinDistance = right.distanceSquaredTo(p);
-                    Double leftMinDistance = nearest(p, x.left, distance, left);
-                    if(leftMinDistance <= rightMinDistance) return distance = leftMinDistance;
-                    else return rightMinDistance = nearest(p, x.right, distance, right) < leftMinDistance ?
-                            rightMinDistance : leftMinDistance;
-                }else{
-                    //left subtree bounding box
-                    Double leftMinDistance = left.distanceSquaredTo(p);
-                    Double rightMinDistance = nearest(p, x.right, distance, right);
-                    if(rightMinDistance <= leftMinDistance) return distance = rightMinDistance;
-                    else return leftMinDistance = nearest(p, x.left, distance, left) < rightMinDistance ?
-                            leftMinDistance : rightMinDistance;
-                }
+    private void nearest(Point2D p, Node x, RectHV rect){
+        if(x == null || rect.distanceSquaredTo(p) > distance) return;
+        if (p.distanceSquaredTo(x.point) < distance) {
+            nearestP = x.point;
+            distance = p.distanceSquaredTo(x.point);
+        }
+        if(x.vertical){
+            RectHV left = new RectHV(rect.xmin(), rect.ymin(), x.point.x(), rect.ymax());
+            RectHV right = new RectHV(x.point.x(), rect.ymin(), rect.xmax(), rect.ymax());
+            if(p.x() < x.point.x()) {
+                nearest(p, x.left, left);
+                nearest(p, x.right, right);
             }else{
-                RectHV down = new RectHV(rect.xmin(), rect.ymin(), rect.xmax(), x.point.y());
-                RectHV up = new RectHV(rect.xmin(), x.point.y(), rect.xmax(), rect.ymax());
-                if(p.y() < x.point.y()){
-                    //down subtree bounding box
-                    Double upMinDistance = up.distanceSquaredTo(p);
-                    Double downMinDistance = nearest(p, x.left, distance, down);
-                    if(downMinDistance <= upMinDistance) return distance = downMinDistance;
-                    else return upMinDistance = nearest(p, x.right, distance, up) < downMinDistance ?
-                            upMinDistance : downMinDistance;
-                }else{
-                    //up subtree bounding box
-                    Double downMinDistance = down.distanceSquaredTo(p);
-                    Double upMinDistance = nearest(p, x.left, distance, down);
-                    if(upMinDistance <= downMinDistance) return distance = upMinDistance;
-                    else return downMinDistance = nearest(p, x.right, distance, up) < upMinDistance ?
-                            downMinDistance : upMinDistance;
-                }
+                nearest(p, x.right, right);
+                nearest(p, x.left, left);
+            }
+        }else{
+            RectHV down = new RectHV(rect.xmin(), rect.ymin(), rect.xmax(), x.point.y());
+            RectHV up = new RectHV(rect.xmin(), x.point.y(), rect.xmax(), rect.ymax());
+            if(p.y() < x.point.y()) {
+                nearest(p, x.left, down);
+                nearest(p, x.right, up);
+            }else{
+                nearest(p, x.right, up);
+                nearest(p, x.left, down);
             }
         }
-
-        return distance;
     }
 
     // unit testing of the methods (optional)
@@ -232,19 +228,24 @@ public class KdTree {
         kd.insert(new Point2D(0.2, 0.3));
         kd.insert(new Point2D(0.4, 0.7));
         kd.insert(new Point2D(0.9, 0.6));
-        kd.insert(new Point2D(0.8, 0.6));
-        kd.insert(new Point2D(0.1, 0.2));
+        //kd.insert(new Point2D(0.8, 0.6));
+        //kd.insert(new Point2D(0.1, 0.2));
         kd.draw();
         StdOut.println("set size: " + kd.size());
         StdOut.println("contains: " + kd.contains(new Point2D(0.1, 0.3)));
 
-        RectHV rect = new RectHV(0.7,0.4,0.85,0.6);
+        RectHV rect = new RectHV(0.45,0.4,0.9,0.6);
         rect.draw();
         for(Point2D p: kd.range(rect)){
             StdOut.println("range: " + p.toString());
         }
 
-        StdOut.println("nearest:" + kd.nearest(new Point2D(0.6, 0.6)));
+        StdDraw.setPenRadius(0.01);
+        Point2D queryP = new Point2D(0.188, 0.898);
+        queryP.draw();
+        StdDraw.setPenRadius();
+
+        StdOut.println("nearest:" + kd.nearest(queryP));
 
     }
 }
